@@ -37,6 +37,12 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
   // Loaded image for overlay
   ui.Image? _overlayImage;
 
+  // Corner smoothing - должен быть полем, а не геттером, чтобы сохранять состояние!
+  final CornerSmoother _cornerSmoother = CornerSmoother(
+    threshold: 10.0, // Игнорировать изменения меньше 10 пикселей
+    smoothingFactor: 0.7, // Больше веса старым значениям для плавности
+  );
+
   @override
   void initState() {
     super.initState();
@@ -121,17 +127,22 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
   Future<void> _processFrame(CameraImage image) async {
     try {
       // Обрабатываем кадр камеры используя методы плагина
-      final result = CameraUtils.processCameraFrame(image, config: _defaultConfig, adjustConfigForCamera: true);
+      final rawResult = CameraUtils.processCameraFrame(image, config: _defaultConfig, adjustConfigForCamera: true);
+
+      // Применяем сглаживание координат
+      final smoothedResult = _cornerSmoother.smooth(rawResult);
 
       if (mounted) {
         setState(() {
-          _detectionResult = result;
-          if (result.isValid) {
-            _statusMessage = 'Paper detected! Area: ${result.area.toInt()} px²';
-            _lastDetectionResult = result;
+          _detectionResult = smoothedResult;
+          if (smoothedResult.isValid) {
+            _statusMessage = 'Paper detected! Area: ${smoothedResult.area.toInt()} px²';
+            _lastDetectionResult = smoothedResult;
           } else {
             final extracted = CameraUtils.extractGrayscaleFromCameraImage(image);
             _statusMessage = 'No paper detected (${extracted.width}x${extracted.height})';
+            // Сбрасываем сглаживание при потере детекции
+            _cornerSmoother.reset();
           }
         });
       }
@@ -195,13 +206,13 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
     final cameraSize = Size(_cameraController!.value.previewSize!.height, _cameraController!.value.previewSize!.width);
 
     return CustomPaint(
-      painter: _ImageOverlayPainter(image: _overlayImage!, corners: result.corners, cameraSize: cameraSize),
+      painter: ImageOverlayPainter(image: _overlayImage!, corners: result.corners, cameraSize: cameraSize),
     );
   }
 }
 
 /// Custom painter for drawing image overlay with perspective transformation
-class _ImageOverlayPainter extends CustomPainter {
+class ImageOverlayPainter extends CustomPainter {
   final ui.Image image;
   final List<Offset> corners;
   final Size cameraSize;
@@ -279,7 +290,7 @@ class _ImageOverlayPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _ImageOverlayPainter oldDelegate) {
+  bool shouldRepaint(covariant ImageOverlayPainter oldDelegate) {
     return corners != oldDelegate.corners || image != oldDelegate.image;
   }
 }
