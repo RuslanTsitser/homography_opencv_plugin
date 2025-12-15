@@ -151,12 +151,12 @@ class CameraUtils {
   ///
   /// Возвращает Matrix4 для применения перспективной трансформации
   /// Использует упрощенный подход через аффинную трансформацию
-  static Matrix4 computePerspectiveMatrix(
-    Size imageSize,
-    Size canvasSize,
-    List<Offset> corners,
-    Size cameraSize,
-  ) {
+  static Matrix4 computePerspectiveMatrix({
+    required Size imageSize,
+    required Size canvasSize,
+    required List<Offset> corners,
+    required Size cameraSize,
+  }) {
     if (corners.length != 4) {
       return Matrix4.identity();
     }

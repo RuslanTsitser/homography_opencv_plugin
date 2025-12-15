@@ -230,16 +230,22 @@ class _ImageOverlayPainter extends CustomPainter {
     // Применяем обрезку
     canvas.clipPath(clipPath);
 
-    // Вычисляем матрицу трансформации для перспективы
-    final srcPoints = [
-      Offset(0, 0), // top-left
-      Offset(image.width.toDouble(), 0), // top-right
-      Offset(image.width.toDouble(), image.height.toDouble()), // bottom-right
-      Offset(0, image.height.toDouble()), // bottom-left
-    ];
+    // Рисуем рамку
+    final paint = Paint()
+      ..color = Colors.green
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0;
+
+    canvas.drawPath(clipPath, paint);
 
     // Вычисляем матрицу перспективной трансформации
-    final matrix = _computePerspectiveMatrix(srcPoints, screenCorners);
+    final imageSize = Size(image.width.toDouble(), image.height.toDouble());
+    final matrix = CameraUtils.computePerspectiveMatrix(
+      imageSize: imageSize,
+      canvasSize: size,
+      corners: result.corners,
+      cameraSize: cameraSize,
+    );
 
     // Применяем трансформацию
     canvas.save();
@@ -248,47 +254,6 @@ class _ImageOverlayPainter extends CustomPainter {
     // Рисуем изображение
     canvas.drawImage(image, Offset.zero, Paint());
     canvas.restore();
-  }
-
-  Matrix4 _computePerspectiveMatrix(List<Offset> src, List<Offset> dst) {
-    // Вычисляем матрицу перспективной трансформации через решение системы уравнений
-    // Используем упрощенный подход через аффинную трансформацию
-    // Для полной перспективы нужна более сложная математика
-
-    // Вычисляем центр исходного изображения
-    final srcCenter = Offset(
-      src.map((p) => p.dx).reduce((a, b) => a + b) / src.length,
-      src.map((p) => p.dy).reduce((a, b) => a + b) / src.length,
-    );
-
-    // Вычисляем центр целевого многоугольника
-    final dstCenter = Offset(
-      dst.map((p) => p.dx).reduce((a, b) => a + b) / dst.length,
-      dst.map((p) => p.dy).reduce((a, b) => a + b) / dst.length,
-    );
-
-    // Вычисляем масштаб
-    final srcWidth = (src[1] - src[0]).distance;
-    final srcHeight = (src[3] - src[0]).distance;
-    final dstWidth = (dst[1] - dst[0]).distance;
-    final dstHeight = (dst[3] - dst[0]).distance;
-
-    final scaleX = dstWidth / srcWidth;
-    final scaleY = dstHeight / srcHeight;
-
-    // Вычисляем угол поворота (упрощенно)
-    final srcVec = src[1] - src[0];
-    final dstVec = dst[1] - dst[0];
-    final angle = (dstVec.direction - srcVec.direction);
-
-    // Создаем матрицу трансформации
-    final matrix = Matrix4.identity()
-      ..translate(dstCenter.dx, dstCenter.dy)
-      ..rotateZ(angle)
-      ..scale(scaleX, scaleY)
-      ..translate(-srcCenter.dx, -srcCenter.dy);
-
-    return matrix;
   }
 
   @override
