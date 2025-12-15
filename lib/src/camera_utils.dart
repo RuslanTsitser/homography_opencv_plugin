@@ -141,4 +141,106 @@ class CameraUtils {
     imageStream.addListener(listener);
     return completer.future;
   }
+
+  /// Вычисляет матрицу перспективной трансформации для преобразования изображения на холст
+  ///
+  /// [imageSize] - Размер исходного изображения
+  /// [canvasSize] - Размер холста (экрана)
+  /// [corners] - Углы детектированного объекта в координатах камеры
+  /// [cameraSize] - Размер камеры для масштабирования координат
+  ///
+  /// Возвращает Matrix4 для применения перспективной трансформации
+  /// Использует упрощенный подход через аффинную трансформацию
+  static Matrix4 computePerspectiveMatrix(
+    Size imageSize,
+    Size canvasSize,
+    List<Offset> corners,
+    Size cameraSize,
+  ) {
+    if (corners.length != 4) {
+      return Matrix4.identity();
+    }
+
+    // Вычисляем масштаб для преобразования координат камеры в координаты экрана
+    final scaleX = canvasSize.width / cameraSize.width;
+    final scaleY = canvasSize.height / cameraSize.height;
+
+    // Преобразуем углы в координаты экрана
+    final dstPoints = corners.map((corner) {
+      return Offset(corner.dx * scaleX, corner.dy * scaleY);
+    }).toList();
+
+    // Исходные точки изображения (углы изображения)
+    final srcPoints = [
+      Offset(0, 0), // top-left
+      Offset(imageSize.width, 0), // top-right
+      Offset(imageSize.width, imageSize.height), // bottom-right
+      Offset(0, imageSize.height), // bottom-left
+    ];
+
+    // Используем первые 3 точки для вычисления аффинной трансформации
+    // Аффинная трансформация: x' = a*x + b*y + c, y' = d*x + e*y + f
+    // Нужно решить систему из 6 уравнений для 6 неизвестных (a, b, c, d, e, f)
+
+    // Используем первые 3 точки для решения системы
+    final src0 = srcPoints[0];
+    final src1 = srcPoints[1];
+    final src2 = srcPoints[2];
+
+    final dst0 = dstPoints[0];
+    final dst1 = dstPoints[1];
+    final dst2 = dstPoints[2];
+
+    // Решаем систему уравнений для аффинной трансформации
+    // Используем метод Крамера для решения 2x2 системы для каждой координаты
+
+    // Для x-координаты: решаем систему
+    // a*x0 + b*y0 + c = x0'
+    // a*x1 + b*y1 + c = x1'
+    // a*x2 + b*y2 + c = x2'
+
+    // Упрощаем: используем только 2 точки и вычисляем параметры
+    // Для упрощения используем подход с центром и масштабом
+
+    // Вычисляем центр из всех точек изображения
+    final srcCenter = Offset(imageSize.width / 2, imageSize.height / 2);
+
+    // Вычисляем центр целевого многоугольника из всех точек
+    final dstCenter = Offset(
+      dstPoints.map((p) => p.dx).reduce((a, b) => a + b) / dstPoints.length,
+      dstPoints.map((p) => p.dy).reduce((a, b) => a + b) / dstPoints.length,
+    );
+
+    // Вычисляем векторы от центра для определения масштаба и поворота
+    final srcVec1 = src1 - src0;
+    final srcVec2 = src2 - src0;
+    final dstVec1 = dst1 - dst0;
+    final dstVec2 = dst2 - dst0;
+
+    // Вычисляем масштаб по первой стороне
+    final srcLen1 = srcVec1.distance;
+    final dstLen1 = dstVec1.distance;
+    final scale1 = dstLen1 / srcLen1;
+
+    // Вычисляем масштаб по второй стороне
+    final srcLen2 = srcVec2.distance;
+    final dstLen2 = dstVec2.distance;
+    final scale2 = dstLen2 / srcLen2;
+
+    // Используем средний масштаб
+    final avgScale = (scale1 + scale2) / 2;
+
+    // Вычисляем угол поворота по первой стороне
+    final angle = dstVec1.direction - srcVec1.direction;
+
+    // Создаем матрицу трансформации
+    // Порядок: перенос в центр источника, поворот, масштаб, перенос в центр назначения
+    final matrix = Matrix4.identity()
+      ..translate(dstCenter.dx, dstCenter.dy, 0)
+      ..scale(avgScale, avgScale, 1)
+      ..rotateZ(angle)
+      ..translate(-srcCenter.dx, -srcCenter.dy, 0);
+
+    return matrix;
+  }
 }
