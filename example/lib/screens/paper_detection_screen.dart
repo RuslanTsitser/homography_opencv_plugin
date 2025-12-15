@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:math' show pi;
 import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
@@ -193,7 +195,7 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
     final cameraSize = Size(_cameraController!.value.previewSize!.height, _cameraController!.value.previewSize!.width);
 
     return CustomPaint(
-      painter: _ImageOverlayPainter(image: _overlayImage!, result: result, cameraSize: cameraSize),
+      painter: _ImageOverlayPainter(image: _overlayImage!, corners: result.corners, cameraSize: cameraSize),
     );
   }
 }
@@ -201,21 +203,21 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
 /// Custom painter for drawing image overlay with perspective transformation
 class _ImageOverlayPainter extends CustomPainter {
   final ui.Image image;
-  final PaperDetectionResult result;
+  final List<Offset> corners;
   final Size cameraSize;
 
-  _ImageOverlayPainter({required this.image, required this.result, required this.cameraSize});
+  _ImageOverlayPainter({required this.image, required this.corners, required this.cameraSize});
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (!result.isValid || result.corners.length != 4) return;
+    if (corners.length != 4) return;
 
     // Вычисляем масштаб для преобразования координат камеры в координаты экрана
     final scaleX = size.width / cameraSize.width;
     final scaleY = size.height / cameraSize.height;
 
     // Преобразуем углы в координаты экрана
-    final screenCorners = result.corners.map((corner) {
+    final screenCorners = corners.map((corner) {
       return Offset(corner.dx * scaleX, corner.dy * scaleY);
     }).toList();
 
@@ -243,7 +245,7 @@ class _ImageOverlayPainter extends CustomPainter {
     final matrix = CameraUtils.computePerspectiveMatrix(
       imageSize: imageSize,
       canvasSize: size,
-      corners: result.corners,
+      corners: corners,
       cameraSize: cameraSize,
     );
 
@@ -251,13 +253,26 @@ class _ImageOverlayPainter extends CustomPainter {
     canvas.save();
     canvas.transform(matrix.storage);
 
-    // Рисуем изображение
-    canvas.drawImage(image, Offset.zero, Paint());
+    // Поворачиваем изображение на 90° для Android на канвасе
+    if (Platform.isAndroid) {
+      final imageSize = Size(image.width.toDouble(), image.height.toDouble());
+      // Переносим в центр изображения
+      canvas.translate(imageSize.width / 2, imageSize.height / 2);
+      // Поворачиваем на 90° по часовой стрелке
+      canvas.rotate(-pi / 2); // π/2 радиан = 90°
+      // Возвращаем обратно (с учетом того, что после поворота width и height меняются местами)
+      canvas.translate(-imageSize.height / 2, -imageSize.width / 2);
+      // Рисуем изображение
+      canvas.drawImage(image, Offset.zero, Paint());
+    } else {
+      // Рисуем изображение без поворота для других платформ
+      canvas.drawImage(image, Offset.zero, Paint());
+    }
     canvas.restore();
   }
 
   @override
   bool shouldRepaint(covariant _ImageOverlayPainter oldDelegate) {
-    return result != oldDelegate.result || image != oldDelegate.image;
+    return corners != oldDelegate.corners || image != oldDelegate.image;
   }
 }
