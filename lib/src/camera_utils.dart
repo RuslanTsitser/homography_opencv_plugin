@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' show Offset;
+import 'dart:ui' as ui show Image;
 
 import 'package:camera/camera.dart';
+import 'package:flutter/material.dart';
 
 import 'paper_detection_result.dart';
 import 'paper_detector.dart';
@@ -104,5 +106,39 @@ class CameraUtils {
     }
 
     return result;
+  }
+
+  /// Загружает ui.Image из ImageProvider
+  ///
+  /// [imageProvider] - Провайдер изображения (NetworkImage, FileImage, AssetImage и т.д.)
+  /// [imageConfiguration] - Конфигурация изображения (опционально)
+  ///
+  /// Возвращает Future с загруженным ui.Image
+  /// Выбрасывает исключение, если загрузка не удалась
+  static Future<ui.Image> loadImageFromProvider(
+    ImageProvider imageProvider, {
+    ImageConfiguration? imageConfiguration,
+  }) async {
+    final completer = Completer<ui.Image>();
+    final imageStream = imageProvider.resolve(imageConfiguration ?? const ImageConfiguration());
+
+    late ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (ImageInfo info, bool synchronousCall) {
+        if (!completer.isCompleted) {
+          completer.complete(info.image);
+        }
+        imageStream.removeListener(listener);
+      },
+      onError: (exception, stackTrace) {
+        if (!completer.isCompleted) {
+          completer.completeError(exception, stackTrace);
+        }
+        imageStream.removeListener(listener);
+      },
+    );
+
+    imageStream.addListener(listener);
+    return completer.future;
   }
 }

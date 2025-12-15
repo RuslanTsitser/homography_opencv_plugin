@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
@@ -53,28 +52,7 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
   Future<void> _loadOverlayImage() async {
     try {
       final imageProvider = NetworkImage(_image);
-      final completer = Completer<ui.Image>();
-      final imageStream = imageProvider.resolve(const ImageConfiguration());
-
-      late ImageStreamListener listener;
-      listener = ImageStreamListener(
-        (ImageInfo info, bool synchronousCall) {
-          if (!completer.isCompleted) {
-            completer.complete(info.image);
-          }
-          imageStream.removeListener(listener);
-        },
-        onError: (exception, stackTrace) {
-          if (!completer.isCompleted) {
-            completer.completeError(exception, stackTrace);
-          }
-          imageStream.removeListener(listener);
-        },
-      );
-
-      imageStream.addListener(listener);
-
-      final image = await completer.future;
+      final image = await CameraUtils.loadImageFromProvider(imageProvider);
       if (mounted) {
         setState(() {
           _overlayImage = image;
