@@ -205,8 +205,14 @@ class _ImageOverlayPainter extends CustomPainter {
   final ui.Image image;
   final List<Offset> corners;
   final Size cameraSize;
+  final bool withBorder;
 
-  _ImageOverlayPainter({required this.image, required this.corners, required this.cameraSize});
+  const ImageOverlayPainter({
+    required this.image,
+    required this.corners,
+    required this.cameraSize,
+    this.withBorder = true,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -232,14 +238,15 @@ class _ImageOverlayPainter extends CustomPainter {
     // Применяем обрезку
     canvas.clipPath(clipPath);
 
-    // Рисуем рамку
-    final paint = Paint()
-      ..color = Colors.green
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0;
+    if (withBorder) {
+      // Рисуем рамку
+      final paint = Paint()
+        ..color = Colors.green
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0;
 
-    canvas.drawPath(clipPath, paint);
-
+      canvas.drawPath(clipPath, paint);
+    }
     // Вычисляем матрицу перспективной трансформации
     final imageSize = Size(image.width.toDouble(), image.height.toDouble());
     final matrix = CameraUtils.computePerspectiveMatrix(
