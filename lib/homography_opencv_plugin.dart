@@ -32,6 +32,7 @@
 library;
 
 export 'src/camera_utils.dart';
+export 'src/corner_smoother.dart';
 export 'src/homography_lib.dart';
 export 'src/homography_result.dart';
 export 'src/paper_detection_result.dart';
