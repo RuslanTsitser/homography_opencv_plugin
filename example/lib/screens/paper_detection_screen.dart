@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
@@ -28,14 +26,12 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
   PaperDetectionResult? _detectionResult;
   PaperDetectionResult? _lastDetectionResult;
 
-  // Selected paper preset
-  String _selectedPresetName = 'A4';
-  PaperDetectionConfig _selectedConfig = PaperDetectionConfig.a4Portrait;
-
   // Processing settings
-  bool _showDebugInfo = true;
   final int _frameSkip = 2; // Process every Nth frame
   int _frameCount = 0;
+
+  // Default config
+  static const PaperDetectionConfig _defaultConfig = PaperDetectionConfig.anyRectangle;
 
   // Loaded image for overlay
   ui.Image? _overlayImage;
@@ -142,75 +138,10 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
     });
   }
 
-  /// Rotate coordinates -90 degrees (clockwise) for Android
-  PaperDetectionResult _rotateResult90CCW(PaperDetectionResult result, int imageWidth, int imageHeight) {
-    if (!result.isValid) return result;
-
-    // Rotate corners: (x, y) -> (height - y, x)
-    final rotatedCorners = result.corners.map((corner) {
-      return Offset(imageHeight - corner.dy, corner.dx);
-    }).toList();
-
-    // Rotate center
-    final rotatedCenter = Offset(imageHeight - result.center.dy, result.center.dx);
-
-    return PaperDetectionResult(
-      corners: rotatedCorners,
-      center: rotatedCenter,
-      homography: result.homography,
-      rotationVector: result.rotationVector,
-      translationVector: result.translationVector,
-      area: result.area,
-      perimeter: result.perimeter,
-      aspectRatio: result.aspectRatio,
-      isValid: result.isValid,
-    );
-  }
-
   Future<void> _processFrame(CameraImage image) async {
     try {
-      // Get Y plane (grayscale) from YUV420
-      final plane = image.planes[0];
-      final int width = image.width;
-      final int height = image.height;
-      final int bytesPerRow = plane.bytesPerRow;
-
-      // If bytesPerRow != width, we need to copy row by row
-      Uint8List grayscaleBytes;
-      if (bytesPerRow == width) {
-        grayscaleBytes = plane.bytes;
-      } else {
-        // Remove padding from each row
-        grayscaleBytes = Uint8List(width * height);
-        for (int y = 0; y < height; y++) {
-          final srcOffset = y * bytesPerRow;
-          final dstOffset = y * width;
-          grayscaleBytes.setRange(dstOffset, dstOffset + width, plane.bytes, srcOffset);
-        }
-      }
-
-      // Adjust config: balance between sensitivity and noise rejection
-      final config = _selectedConfig.copyWith(
-        minAreaRatio: 0.1, // Paper should be at least 10% of frame
-        maxAreaRatio: 0.9,
-        cannyThreshold1: 50,
-        cannyThreshold2: 150,
-        blurKernelSize: 7, // More blur to reduce noise
-      );
-
-      // Detect paper
-      var result = detectPaper(
-        imageData: grayscaleBytes,
-        width: width,
-        height: height,
-        channels: 1, // Grayscale
-        config: config,
-      );
-
-      // Rotate result for Android (camera returns rotated images)
-      if (Platform.isAndroid && result.isValid) {
-        result = _rotateResult90CCW(result, width, height);
-      }
+      // Обрабатываем кадр камеры используя методы плагина
+      final result = CameraUtils.processCameraFrame(image, config: _defaultConfig, adjustConfigForCamera: true);
 
       if (mounted) {
         setState(() {
@@ -219,7 +150,8 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
             _statusMessage = 'Paper detected! Area: ${result.area.toInt()} px²';
             _lastDetectionResult = result;
           } else {
-            _statusMessage = 'No paper detected (${width}x$height)';
+            final extracted = CameraUtils.extractGrayscaleFromCameraImage(image);
+            _statusMessage = 'No paper detected (${extracted.width}x${extracted.height})';
           }
         });
       }
@@ -230,55 +162,12 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
     }
   }
 
-  void _onPresetChanged(String? presetName) {
-    if (presetName == null) return;
-    final config = PaperDetectionConfig.presets[presetName];
-    if (config == null) return;
-
-    setState(() {
-      _selectedPresetName = presetName;
-      _selectedConfig = config;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Paper Detection'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          IconButton(
-            icon: Icon(_showDebugInfo ? Icons.visibility : Icons.visibility_off),
-            onPressed: () => setState(() => _showDebugInfo = !_showDebugInfo),
-            tooltip: 'Toggle debug info',
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(60),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: Row(
-              children: [
-                const Icon(Icons.description, size: 20),
-                const SizedBox(width: 8),
-                const Text('Paper format:'),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButton<String>(
-                    value: _selectedPresetName,
-                    isExpanded: true,
-                    onChanged: _onPresetChanged,
-                    items: PaperDetectionConfig.presets.keys
-                        .map((name) => DropdownMenuItem(value: name, child: Text(name)))
-                        .toList(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
       bottomNavigationBar: Container(
         padding: const EdgeInsets.all(16),
@@ -308,9 +197,6 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
                   // Detection overlay with image
                   if (_lastDetectionResult != null && _lastDetectionResult!.isValid)
                     _buildImageOverlay(_lastDetectionResult!),
-
-                  // Debug info overlay
-                  if (_showDebugInfo) Positioned(left: 8, top: 8, child: _buildDebugOverlay()),
                 ],
               ),
             )
@@ -330,49 +216,6 @@ class _PaperDetectionScreenState extends State<PaperDetectionScreen> {
 
     return CustomPaint(
       painter: _ImageOverlayPainter(image: _overlayImage!, result: result, cameraSize: cameraSize),
-    );
-  }
-
-  Widget _buildDebugOverlay() {
-    final result = _detectionResult;
-    final camSize = _cameraController?.value.previewSize;
-    final isDetectorAvailable = PaperDetector.instance.isAvailable;
-
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Detector: ${isDetectorAvailable ? "OK" : "NOT AVAILABLE"}',
-            style: TextStyle(color: isDetectorAvailable ? Colors.greenAccent : Colors.redAccent, fontSize: 11),
-          ),
-          if (camSize != null)
-            Text(
-              'Camera: ${camSize.width.toInt()}x${camSize.height.toInt()}',
-              style: const TextStyle(color: Colors.white70, fontSize: 11),
-            ),
-          Text('Preset: $_selectedPresetName', style: const TextStyle(color: Colors.white, fontSize: 12)),
-          Text(
-            'Expected AR: ${_selectedConfig.expectedAspectRatio.toStringAsFixed(3)}',
-            style: const TextStyle(color: Colors.white70, fontSize: 11),
-          ),
-          if (result != null && result.isValid) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Detected AR: ${result.aspectRatio.toStringAsFixed(3)}',
-              style: const TextStyle(color: Colors.greenAccent, fontSize: 11),
-            ),
-            Text('Area: ${result.area.toInt()} px²', style: const TextStyle(color: Colors.greenAccent, fontSize: 11)),
-            Text(
-              'Size: ${result.width.toInt()} × ${result.height.toInt()}',
-              style: const TextStyle(color: Colors.greenAccent, fontSize: 11),
-            ),
-          ],
-        ],
-      ),
     );
   }
 }
@@ -473,79 +316,5 @@ class _ImageOverlayPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ImageOverlayPainter oldDelegate) {
     return result != oldDelegate.result || image != oldDelegate.image;
-  }
-}
-
-/// Custom painter for drawing paper detection overlay
-class PaperOverlayPainter extends CustomPainter {
-  final PaperDetectionResult result;
-  final Size cameraSize;
-
-  PaperOverlayPainter({required this.result, required this.cameraSize});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (!result.isValid || result.corners.length != 4) return;
-
-    // Calculate scale factors (camera coords -> screen coords)
-    final scaleX = size.width / cameraSize.width;
-    final scaleY = size.height / cameraSize.height;
-
-    // Transform corners to screen coordinates
-    final screenCorners = result.corners.map((corner) {
-      return Offset(corner.dx * scaleX, corner.dy * scaleY);
-    }).toList();
-
-    // Draw filled polygon with semi-transparent color
-    final fillPaint = Paint()
-      ..color = Colors.green.withValues(alpha: 0.2)
-      ..style = PaintingStyle.fill;
-
-    final path = Path()
-      ..moveTo(screenCorners[0].dx, screenCorners[0].dy)
-      ..lineTo(screenCorners[1].dx, screenCorners[1].dy)
-      ..lineTo(screenCorners[2].dx, screenCorners[2].dy)
-      ..lineTo(screenCorners[3].dx, screenCorners[3].dy)
-      ..close();
-
-    canvas.drawPath(path, fillPaint);
-
-    // Draw border
-    final borderPaint = Paint()
-      ..color = Colors.green
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
-
-    canvas.drawPath(path, borderPaint);
-
-    // Draw corner points
-    final cornerPaint = Paint()
-      ..color = Colors.greenAccent
-      ..style = PaintingStyle.fill;
-
-    for (int i = 0; i < screenCorners.length; i++) {
-      canvas.drawCircle(screenCorners[i], 8, cornerPaint);
-
-      // Draw corner index
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: '$i',
-          style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
-        ),
-        textDirection: TextDirection.ltr,
-      );
-      textPainter.layout();
-      textPainter.paint(canvas, screenCorners[i] - Offset(textPainter.width / 2, textPainter.height / 2));
-    }
-
-    // Draw center point
-    final centerX = result.center.dx * scaleX;
-    final centerY = result.center.dy * scaleY;
-    canvas.drawCircle(Offset(centerX, centerY), 6, Paint()..color = Colors.red);
-  }
-
-  @override
-  bool shouldRepaint(covariant PaperOverlayPainter oldDelegate) {
-    return result != oldDelegate.result;
   }
 }
